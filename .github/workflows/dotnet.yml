@@ -82,7 +82,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.get_version.outputs.tag }}
-          name: Password Generator ${{ steps.get_version.outputs.version }}
+          name: MsgToEmlConverter ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true
