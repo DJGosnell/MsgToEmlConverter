@@ -1,0 +1,101 @@
+name: .NET Build and Release
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore src/MsgToEmlConverter.sln
+
+      - name: Build
+        run: dotnet build src/MsgToEmlConverter.sln --no-restore --configuration Release
+
+      - name: Publish Windows x64
+        run: dotnet publish src/MsgToEmlConverter/MsgToEmlConverter.csproj --configuration Release --runtime win-x64 --self-contained true --output ./publish-win-x64
+
+      - name: Publish Linux x64
+        run: dotnet publish src/MsgToEmlConverter/MsgToEmlConverter.csproj --configuration Release --runtime linux-x64 --self-contained true --output ./publish-linux-x64
+
+      - name: Publish macOS x64
+        run: dotnet publish src/MsgToEmlConverter/MsgToEmlConverter.csproj --configuration Release --runtime osx-x64 --self-contained true --output ./publish-osx-x64
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-binaries
+          path: |
+            ./publish-win-x64/
+            ./publish-linux-x64/
+            ./publish-osx-x64/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: published-binaries
+          path: ./artifacts
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Rename binaries for release
+        run: |
+          # Windows executable
+          Copy-Item "./artifacts/publish-win-x64/MsgToEmlConverter.exe" "MsgToEmlConverter-${{ steps.get_version.outputs.version }}-win-x64.exe"
+          
+          # Linux executable  
+          Copy-Item "./artifacts/publish-linux-x64/MsgToEmlConverter" "MsgToEmlConverter-${{ steps.get_version.outputs.version }}-linux-x64"
+          
+          # macOS executable
+          Copy-Item "./artifacts/publish-osx-x64/MsgToEmlConverter" "MsgToEmlConverter-${{ steps.get_version.outputs.version }}-osx-x64"
+        shell: pwsh
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          name: Password Generator ${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            MsgToEmlConverter-${{ steps.get_version.outputs.version }}-win-x64.exe
+            MsgToEmlConverter-${{ steps.get_version.outputs.version }}-linux-x64
+            MsgToEmlConverter-${{ steps.get_version.outputs.version }}-osx-x64
+          body: |
+            ## Outlook MSG to EML Converter v${{ steps.get_version.outputs.version }}
+            
+            ### Downloads
+            - **Windows x64**: `MsgToEmlConverter-${{ steps.get_version.outputs.version }}-win-x64.exe`
+            - **Linux x64**: `MsgToEmlConverter-${{ steps.get_version.outputs.version }}-linux-x64`
+            - **macOS x64**: `MsgToEmlConverter-${{ steps.get_version.outputs.version }}-osx-x64`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
